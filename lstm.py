@@ -20,8 +20,14 @@ log = logging.getLogger('epip_lstm')
 log.addHandler(logging.NullHandler())
 
 logfmt = '%(asctime)s %(name)-12s: %(levelname)-8s %(message)s'    
-logging.basicConfig(level=logging.DEBUG,
-    format=logfmt, datefmt='%Y-%m-%d %H:%M')
+logging.basicConfig(
+    level=logging.DEBUG,
+    format=logfmt, 
+    datefmt='%Y-%m-%d %H:%M',
+    handlers=[
+        logging.FileHandler(filename=f'{c.TRAIN_OUT}/train.log', mode='a'),
+        logging.StreamHandler()
+    ])
 
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device = torch.device("cpu")
@@ -34,6 +40,7 @@ num_classes = 1
 learning_rate = 0.005
 batch_size = 64
 num_epochs = 10
+embedding_dim = 128
 
 def plot(label_lst, predict_lst, name):
 
@@ -54,11 +61,16 @@ def plot(label_lst, predict_lst, name):
 
 
 class RNN(nn.Module):
-    def __init__(self, name, input_size, hidden_size, num_layers, num_classes):
+    def __init__(self, name, input_size, hidden_size, num_layers, num_classes, embedding_dim):
         super(RNN, self).__init__()
         self.name = name
         self.hidden_size = hidden_size
         self.num_layers = num_layers
+        self.embedding_dim = embedding_dim
+        self.embedding = nn.Embedding(
+            num_embeddings=input_size,
+            embedding_dim=self.embedding_dim,
+        )
         self.lstm = nn.LSTM(
             input_size=input_size,
             hidden_size=hidden_size,
@@ -70,7 +82,7 @@ class RNN(nn.Module):
         self.opt = torch.optim.Adam(self.parameters(), lr=learning_rate)
 
     def forward(self, x):
-
+        # embed = self.embedding(x.long())
         h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device)
         c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device)
 
@@ -165,6 +177,8 @@ def standardize_data(data, vocab_lst, maxlength = 300, X='Antigen'):
                 standard_data.append((sequence, labels, mask))
         return standard_data 
 
+def get_features(data):
+    pass
 
 def main():
     parser = argparse.ArgumentParser()
@@ -181,9 +195,12 @@ def main():
     test_data = pd.read_csv(test_file[0], converters={'Y':ast.literal_eval})
     # log.info('train data: {}'.format(train_data))
 
-    train_data_stand = standardize_data(train_data, c.AA_LIST)
-    valid_data_stand = standardize_data(valid_data, c.AA_LIST)
-    test_data_stand = standardize_data(test_data, c.AA_LIST)
+    lst = train_data['Antigen'].tolist()
+    maxlen = max([len(A) for A in lst])
+
+    train_data_stand = standardize_data(train_data, c.AA_LIST, maxlength=maxlen)
+    valid_data_stand = standardize_data(valid_data, c.AA_LIST, maxlength=maxlen)
+    test_data_stand = standardize_data(test_data, c.AA_LIST, maxlength=maxlen)
 
     train_set = dataset(train_data_stand)
     valid_set = dataset(valid_data_stand)
@@ -191,7 +208,7 @@ def main():
     train_loader = DataLoader(train_set, batch_size=16, shuffle=True)
     test_loader = DataLoader(test_set, batch_size=16, shuffle=False)
 
-    model = RNN(name ='IEDB_Epitope', hidden_size=hidden_size, input_size=input_size, num_layers=num_layers, num_classes=num_classes)
+    model = RNN(name ='IEDB_Epitope', hidden_size=hidden_size, input_size=input_size, num_layers=num_layers, num_classes=num_classes, embedding_dim=embedding_dim)
     for ep in range(num_epochs):
         log.info('epoch: {}'.format(str(ep)))
         for sequence, labels, mask in train_loader:
