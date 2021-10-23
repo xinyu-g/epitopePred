@@ -15,6 +15,7 @@ import consts as c
 import pandas as pd
 import ast
 import logging
+import utils
 
 log = logging.getLogger('epip_lstm')
 log.addHandler(logging.NullHandler())
@@ -25,14 +26,14 @@ logging.basicConfig(
     format=logfmt, 
     datefmt='%Y-%m-%d %H:%M',
     handlers=[
-        logging.FileHandler(filename=f'{c.TRAIN_OUT}/train.log', mode='a'),
+        logging.FileHandler(filename=f'{c.TRAIN_OUT}/train2.log', mode='a'),
         logging.StreamHandler()
     ])
 
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device = torch.device("cpu")
 
-input_size = 24     #20 amino acids, 4 ambiguous amino acids	
+input_size = 39     #20 amino acids, 4 ambiguous amino acids	
 hidden_size = 30   #
 num_layers = 2
 num_classes = 1
@@ -146,7 +147,6 @@ class dataset(Dataset):
 		return len(self.labels)
 
 
-
 def onehot(idx, length):
 	lst = [0 for i in range(length)]
 	lst[idx] = 1
@@ -156,33 +156,35 @@ def zerohot(length):
 	return [0 for i in range(length)]
 
 # what is the maxlength here
-def standardize_data(data, vocab_lst, maxlength = 300, X='Antigen'):
+def standardize_data(data, aa_lst, q_lst, maxlength = 300, X='Antigen'):
+        features_i, sequences, labels, masks = utils.get_aa(data)
+        SS = utils.get_SS(data)
+        features_ii = utils.get_features(data)
         length = len(data)
         standard_data = []
         for i in range(length):
-                antigen = data[X][i]
-                Y = data['Y'][i]
-                # log.info('type Y: {}, Y: {}'.format(type(Y), Y))
-                sequence = [onehot(vocab_lst.index(s), len(vocab_lst)) for s in antigen]
-                labels = [0 for i in range(len(antigen))]
-                mask = [True for i in range(len(labels))]
-                sequence += (maxlength-len(sequence)) * [zerohot(len(vocab_lst))]
-                labels += (maxlength-len(labels)) * [0]
-                mask += (maxlength-len(mask)) * [False]
-                for y in Y:
-                        labels[y] = 1
-                sequence, labels, mask = sequence[:maxlength], labels[:maxlength], mask[:maxlength]
-                sequence, labels, mask = torch.FloatTensor(sequence), torch.FloatTensor(labels), torch.BoolTensor(mask)
-                # print(sequence.shape, labels.shape, mask.shape)
-                standard_data.append((sequence, labels, mask))
-        return standard_data 
-
-def get_features(data):
-    pass
+            seq = sequences[i]
+            ssp = SS[i]
+            feature_i = features_i[i]
+            feature_ii = features_ii[i]
+            label = labels[i]
+            mask = masks[i]
+            # log.info('seq len: {}, ssp len: {}, feature i len: {}, feature ii len: {}'.format(len(seq), len(ssp), len(feature_i), len(feature_ii)))
+            sequence = [seq[j] + ssp[j] + feature_i[j] + feature_ii[j] for j in range(len(seq))]
+            sequence += (maxlength-len(sequence)) * [zerohot(len(aa_lst)+len(ssp[0])+len(feature_i[0])+len(feature_ii[0]))]
+            label += (maxlength-len(label)) * [0]
+            mask += (maxlength-len(mask)) * [False]
+            
+            sequence, label, mask = sequence[:maxlength], label[:maxlength], mask[:maxlength]
+            sequence, label, mask = torch.FloatTensor(sequence), torch.FloatTensor(label), torch.BoolTensor(mask)
+            # log.info('seq len: {}, label len: {}, mask len: {}'.format(sequence.shape, label.shape, mask.shape))
+            standard_data.append((sequence, label, mask))
+            
+        return standard_data
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data', default=c.DATA_IN)
+    parser.add_argument('--data', default=c.DATA_SEC)
     parser.add_argument('--name', default='IEDB')
     args = parser.parse_args()
 
@@ -190,17 +192,32 @@ def main():
     valid_file = glob.glob(args.data + f'/{args.name}*valid*.csv')
     test_file = glob.glob(args.data + f'/{args.name}*test*.csv')
     log.info('train file: {}, test file: {}'.format(train_file, test_file))
-    train_data = pd.read_csv(train_file[0], converters={'Y':ast.literal_eval})
-    valid_data = pd.read_csv(valid_file[0], converters={'Y':ast.literal_eval})
-    test_data = pd.read_csv(test_file[0], converters={'Y':ast.literal_eval})
+    # train_data = pd.read_csv(train_file[0], converters={'Y':ast.literal_eval})
+    # valid_data = pd.read_csv(valid_file[0], converters={'Y':ast.literal_eval})
+    # test_data = pd.read_csv(test_file[0], converters={'Y':ast.literal_eval})
     # log.info('train data: {}'.format(train_data))
+    train_data = pd.read_csv(train_file[0], converters={'q8_prob':ast.literal_eval,'q3_prob':ast.literal_eval, 'phi':ast.literal_eval, 'psi':ast.literal_eval, 'rsa':ast.literal_eval, 'asa':ast.literal_eval, 'Y':ast.literal_eval})
+    valid_data = pd.read_csv(valid_file[0], converters={'q8_prob':ast.literal_eval,'q3_prob':ast.literal_eval, 'phi':ast.literal_eval, 'psi':ast.literal_eval, 'rsa':ast.literal_eval, 'asa':ast.literal_eval, 'Y':ast.literal_eval})
+    test_data = pd.read_csv(test_file[0], converters={'q8_prob':ast.literal_eval,'q3_prob':ast.literal_eval, 'phi':ast.literal_eval, 'psi':ast.literal_eval, 'rsa':ast.literal_eval, 'asa':ast.literal_eval, 'Y':ast.literal_eval})
 
+    train_data = train_data[train_data.Antigen.str.len() == train_data.seq.str.len()].reset_index()
+    valid_data = valid_data[valid_data.Antigen.str.len() == valid_data.seq.str.len()].reset_index()
+    test_data = test_data[test_data.Antigen.str.len() == test_data.seq.str.len()].reset_index()
+    
+    # exceptions
+    e1 = train_data[train_data.Antigen.str.len() != train_data.seq.str.len()]
+    e2 = valid_data[valid_data.Antigen.str.len() != valid_data.seq.str.len()]
+    e3 = test_data[test_data.Antigen.str.len() != test_data.seq.str.len()]
+    exceptions = pd.concat([e1, e2, e3])
+    exceptions.to_csv(f'{c.DATA_SEC}/{args.name}_exceptions.csv')
     lst = train_data['Antigen'].tolist()
     maxlen = max([len(A) for A in lst])
+    log.info('max len: {}'.format(maxlen))
+    # maxlen=2000
 
-    train_data_stand = standardize_data(train_data, c.AA_LIST, maxlength=maxlen)
-    valid_data_stand = standardize_data(valid_data, c.AA_LIST, maxlength=maxlen)
-    test_data_stand = standardize_data(test_data, c.AA_LIST, maxlength=maxlen)
+    train_data_stand = standardize_data(train_data, c.AA_LIST, c.Q8, maxlength=maxlen)
+    valid_data_stand = standardize_data(valid_data, c.AA_LIST, c.Q8, maxlength=maxlen)
+    test_data_stand = standardize_data(test_data, c.AA_LIST, c.Q8, maxlength=maxlen)
 
     train_set = dataset(train_data_stand)
     valid_set = dataset(valid_data_stand)

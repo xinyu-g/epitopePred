@@ -9,12 +9,7 @@ import time
 import logging
 import argparse
 import glob
-# from loguru import logger
-# import sys
-# import datetime
 
-# data_class, name, X = Epitope, 'IEDB_Jespersen', 'Antigen'
-#  data_class, name, X = Epitope, 'PDB_Jespersen', 'Antigen'
 
 log = logging.getLogger('epip')
 log.addHandler(logging.NullHandler())
@@ -23,13 +18,6 @@ logfmt = '%(asctime)s %(name)-12s: %(levelname)-8s %(message)s'
 logging.basicConfig(level=logging.DEBUG,
     format=logfmt, datefmt='%Y-%m-%d %H:%M')
 
-
-# data = data_class(name=name)
-# split = data.get_split()
-# train_data = split['train']
-# valid_data = split['valid']
-# test_data = split['test']
-# vocab_set = set()
 
 def to_protlists(data, type='dict'):
 
@@ -53,9 +41,7 @@ def to_protlists(data, type='dict'):
     return protlists
 
 
-# train_protlists = to_protlists(train_data)
-# valid_protlists = to_protlists(valid_data)
-# test_protlists = to_protlists(test_data)
+
 
 
 def get_feature(protlists, hhblits=c.HHBLITS, hhsuite=c.HHSUITE):
@@ -89,9 +75,7 @@ def get_feature(protlists, hhblits=c.HHBLITS, hhsuite=c.HHSUITE):
     
     return sec_features
 
-# train_sec_features = get_feature(train_protlists)
-# valid_sec_features = get_feature(valid_protlists)
-# test_sec_features = get_feature(test_protlists)
+
 
 def join(data, features):
     log.info('num of records in data: {}, num of records in features: {}'.format(data.shape[0], features.shape[0]))
@@ -103,18 +87,10 @@ def join(data, features):
     return res
 
 
-# train = join(train_data, train_sec_features)
-# valid = join(valid_data, valid_sec_features)
-# test = join(test_data, test_sec_features)
-
-# train.to_csv(c.DATA_OUT + f'/{name}_train.csv')
-# valid.to_csv(c.DATA_OUT + f'/{name}_valid.csv')
-# test.to_csv(c.DATA_OUT + f'/{name}_test.csv')
-
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data', default=c.DATA_IN + '/*.csv')
+    parser.add_argument('--data', default=c.DATA_RAW + '/*.csv')
     args = parser.parse_args()
 
     files = glob.glob(args.data)
@@ -127,7 +103,7 @@ def main():
         sec_features = get_feature(protlists)
         joined = join(data, sec_features)
         log.info("writing file: {}".format(name))
-        joined.to_csv(c.DATA_OUT + f'/{name}', index='Antigen_ID')
+        joined.to_csv(c.DATA_SEC + f'/{name}', index='Antigen_ID')
         
 
 
