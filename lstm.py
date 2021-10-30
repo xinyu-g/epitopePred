@@ -6,6 +6,7 @@ from torch.utils.data import Dataset, DataLoader
 from sklearn import metrics
 from sklearn.metrics import roc_auc_score, precision_recall_curve, roc_curve, auc
 from sklearn.metrics import f1_score, average_precision_score, precision_score, recall_score, accuracy_score
+from scipy.spatial.distance import hamming
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import interp
@@ -16,6 +17,7 @@ import pandas as pd
 import ast
 import logging
 import utils
+import time
 
 log = logging.getLogger('epip_lstm')
 log.addHandler(logging.NullHandler())
@@ -26,7 +28,7 @@ logging.basicConfig(
     format=logfmt, 
     datefmt='%Y-%m-%d %H:%M',
     handlers=[
-        logging.FileHandler(filename=f'{c.TRAIN_OUT}/train2.log', mode='a'),
+        logging.FileHandler(filename=f'{c.TRAIN_OUT}/train.log', mode='a'),
         logging.StreamHandler()
     ])
 
@@ -40,8 +42,9 @@ num_classes = 1
 #sequence_length = 
 learning_rate = 0.005
 batch_size = 64
-num_epochs = 10
+num_epochs = 20
 embedding_dim = 128
+gamma = 0.99
 
 def plot(label_lst, predict_lst, name):
 
@@ -79,8 +82,17 @@ class RNN(nn.Module):
             batch_first=True,
         )
         self.fc = nn.Linear(hidden_size, num_classes)
+        self.gamma = gamma
+        self.reward_episode = list()
+        self.policy_history = list()
+        self.reward_history = list()
+        self.loss_history = list()
+
+    def reset_episode(self):
+        self.reward_episode = list()
+        self.policy_history = list()
         # self.criterion = torch.nn.BCEWithLogitsLoss()
-        self.opt = torch.optim.Adam(self.parameters(), lr=learning_rate)
+        # self.opt = torch.optim.Adam(self.parameters(), lr=learning_rate)
 
     def forward(self, x):
         # embed = self.embedding(x.long())
@@ -96,43 +108,42 @@ class RNN(nn.Module):
         out = out.squeeze(-1)
         return out
 
-    def learn(self, sequence, labels, mask):
+    # def learn(self, sequence, labels, mask):
         
-        prediction = self.forward(sequence)
+    #     prediction = self.forward(sequence)
 
-        criterion = torch.nn.BCEWithLogitsLoss(size_average=True, weight = mask)
-        loss = criterion(prediction, labels)
-        log.info("loss: {}".format(loss))
-        self.opt.zero_grad()
-        loss.backward()
-        self.opt.step()
+    #     criterion = torch.nn.BCEWithLogitsLoss(size_average=True, weight = mask)
+    #     loss = criterion(prediction, labels)
+    #     log.info("loss: {}".format(loss))
+    #     self.opt.zero_grad()
+    #     loss.backward()
+    #     self.opt.step()
 
 
-    def evaluate(self, test_loader, name):
-        label_lst, prediction_lst = [], []
-        for sequence, labels, mask in test_loader:
-            prediction = self.forward(sequence)
-            prediction = torch.sigmoid(prediction)
-            for pred, label, msk in zip(prediction, labels, mask):
-                num = sum(msk.tolist()) 
-                pred = pred.tolist()[:num] 
-                label = label.tolist()[:num] 
-                label_lst.extend(label)
-                prediction_lst.extend(pred)
-        sort_pred = deepcopy(prediction_lst)
-        sort_pred.sort() 
-        threshold = sort_pred[int(len(sort_pred)*0.9)]
-        float2binary = lambda x:0 if x<threshold else 1
-        binary_pred_lst = list(map(float2binary, prediction_lst))
-        plot(label_lst, prediction_lst, name)
-        log.info('roc_auc: {}, F1: {}, prauc: {}'.format(roc_auc_score(label_lst, prediction_lst), 
-                f1_score(label_lst, binary_pred_lst), 
-                average_precision_score(label_lst, binary_pred_lst)))
+    # def evaluate(self, test_loader, name):
+    #     label_lst, prediction_lst = [], []
+    #     for sequence, labels, mask in test_loader:
+    #         prediction = self.forward(sequence)
+    #         prediction = torch.sigmoid(prediction)
+    #         for pred, label, msk in zip(prediction, labels, mask):
+    #             num = sum(msk.tolist()) 
+    #             pred = pred.tolist()[:num] 
+    #             label = label.tolist()[:num] 
+    #             label_lst.extend(label)
+    #             prediction_lst.extend(pred)
+    #     sort_pred = deepcopy(prediction_lst)
+    #     sort_pred.sort() 
+    #     threshold = sort_pred[int(len(sort_pred)*0.9)]
+    #     float2binary = lambda x:0 if x<threshold else 1
+    #     binary_pred_lst = list(map(float2binary, prediction_lst))
+    #     plot(label_lst, prediction_lst, name)
+    #     log.info('roc_auc: {}, F1: {}, prauc: {}'.format(roc_auc_score(label_lst, prediction_lst), 
+    #             f1_score(label_lst, binary_pred_lst), 
+    #             average_precision_score(label_lst, binary_pred_lst)))
 
-    def reward(self):
-        pass
-        
-        
+    # def reward(self):
+    #     pass
+               
 
 class dataset(Dataset):
 	def __init__(self, data):
@@ -182,6 +193,119 @@ def standardize_data(data, aa_lst, q_lst, maxlength = 300, X='Antigen'):
             
         return standard_data
 
+def reward(prediction, labels):
+    rewards = []
+    # ham = hamming(prediction, labels) * len(prediction)
+    # turns =  0
+    prev, curr = prediction[0], prediction[0]
+    for i in range(len(prediction)):
+        prev, curr = curr, prediction[i]
+        if prev and curr and labels[i]:
+            rewards.extend([1])
+        else:
+            rewards.extend([0])           
+
+    return rewards
+
+def customized_loss(y_pred, y, mask):
+    R = 0
+    prediction_lst, label_lst, rewards = [], [], []
+    y_pred_ = torch.sigmoid(y_pred)
+    for pred, label, msk in zip(y_pred_, y, mask):
+        num = sum(msk.tolist()) 
+        pred = pred.tolist()[:num] 
+        label = label.tolist()[:num] 
+        label_lst.extend(label)
+        prediction_lst.extend(pred)
+    sort_pred = deepcopy(prediction_lst)
+    sort_pred.sort() 
+    threshold = sort_pred[int(len(sort_pred)*0.9)]
+    float2binary = lambda x:0 if x<threshold else 1
+    binary_pred_lst = list(map(float2binary, prediction_lst))
+    rewards_episode = reward(binary_pred_lst, label_lst)
+    for r in rewards_episode[::-1]:
+        R = r + gamma * R
+        rewards.insert(0,R)
+    rewards = torch.FloatTensor(rewards)
+    rewards = (rewards - rewards.mean()) / (rewards.std() + float(np.finfo(np.float32).eps))
+    y_pred_ = torch.unsqueeze(torch.reshape(y_pred_, (-1,)), 1)
+    loss = torch.sum(torch.mul(torch.log(y_pred_), rewards).mul(-1), -1)
+    return loss
+
+
+# def update_policy(policy, optimizer, e):
+#     R = 0
+#     rewards = []
+
+#     for r in reversed(policy.reward_episode):
+#         R = r + policy.gamma * R
+#         rewards.insert(0, R)
+
+#     rewards = torch.FloatTensor(rewards)
+
+#     rewards = (rewards - rewards.mean()) / (rewards.std() + float(np.finfo(np.float32).eps))
+
+#     policy_history = torch.stack(policy.policy_history)
+#     loss = torch.mul(policy_history, rewards).mul(-1)
+
+#     loss = torch.sum(loss, dim=-1)
+
+#     optimizer.zero_grad()
+#     loss.backward()
+#     optimizer.step()
+
+#     policy.loss_history.append(loss.data[0])
+#     policy.reward_history.append(np.sum(policy.reward_episode))
+#     policy.reset_episode()
+
+
+def train(model, train_loader, optimizer, epoch_num, criterion=None):
+    epoch_loss = 0
+
+    model.train()
+
+    for sequence, labels, mask in tqdm(train_loader, f"Epoch: {epoch_num}"):
+        
+        prediction = model(sequence)
+        # y_pred = deepcopy(prediction)
+        loss_r = customized_loss(prediction, labels, mask)
+        criterion = torch.nn.BCEWithLogitsLoss(weight = mask)
+        loss = criterion(prediction, labels) + loss_r[0]
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        epoch_loss += loss.item()
+
+        time.sleep(0.001)
+
+    return epoch_loss/len(train_loader)
+
+
+def evaluate(model, test_loader, name):
+    label_lst, prediction_lst = [], []
+    
+    model.eval()
+
+    with torch.no_grad():
+        for sequence, labels, mask in test_loader:
+            prediction = model(sequence)
+            prediction = torch.sigmoid(prediction)
+            for pred, label, msk in zip(prediction, labels, mask):
+                num = sum(msk.tolist()) 
+                pred = pred.tolist()[:num] 
+                label = label.tolist()[:num] 
+                label_lst.extend(label)
+                prediction_lst.extend(pred)
+        sort_pred = deepcopy(prediction_lst)
+        sort_pred.sort() 
+        threshold = sort_pred[int(len(sort_pred)*0.9)]
+        float2binary = lambda x:0 if x<threshold else 1
+        binary_pred_lst = list(map(float2binary, prediction_lst))
+        plot(label_lst, prediction_lst, name)
+    
+    return label_lst, prediction_lst, binary_pred_lst
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data', default=c.DATA_SEC)
@@ -225,12 +349,22 @@ def main():
     train_loader = DataLoader(train_set, batch_size=16, shuffle=True)
     test_loader = DataLoader(test_set, batch_size=16, shuffle=False)
 
+
     model = RNN(name ='IEDB_Epitope', hidden_size=hidden_size, input_size=input_size, num_layers=num_layers, num_classes=num_classes, embedding_dim=embedding_dim)
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+
     for ep in range(num_epochs):
-        log.info('epoch: {}'.format(str(ep)))
-        for sequence, labels, mask in train_loader:
-            model.learn(sequence, labels, mask)
-        model.evaluate(test_loader, name=f'{model.name}_{str(ep)}.png')
+        log.info('epoch: {}'.format(str(ep+1)))
+        train_loss = train(model, train_loader, optimizer, ep+1)
+        label_lst, prediction_lst, binary_pred_lst = evaluate(model, test_loader, name=f'{model.name}_{str(ep+1)}.png')
+
+        tqdm.write(f'''End of Epoch: {ep+1}  |  Train Loss: {train_loss:.3f}  |  roc_auc: {roc_auc_score(label_lst, prediction_lst):.3f}  |  F1: {f1_score(label_lst, binary_pred_lst, average='micro'):.3f}  |  prauc: {average_precision_score(label_lst, binary_pred_lst):.3f}''')
+        log.info('Epoch: {}, loss: {}, roc_auc: {}, F1: {}, prauc: {}'.format(str(ep+1), train_loss, roc_auc_score(label_lst, prediction_lst), 
+                f1_score(label_lst, binary_pred_lst, average='micro'), 
+                average_precision_score(label_lst, prediction_lst, average='micro')))
+        # for sequence, labels, mask in train_loader:
+        #     model.learn(sequence, labels, mask)
+        # model.evaluate(test_loader, name=f'{model.name}_{str(ep)}.png')
 
 
 if __name__ == "__main__":
