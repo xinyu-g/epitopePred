@@ -41,9 +41,6 @@ def to_protlists(data, type='dict'):
     return protlists
 
 
-
-
-
 def get_feature(protlists, hhblits=c.HHBLITS, hhsuite=c.HHSUITE):
     out_dir = c.OUT_DIR
     searcher = preprocess.HHblits(hhblits, n_threads=20)
@@ -76,7 +73,6 @@ def get_feature(protlists, hhblits=c.HHBLITS, hhsuite=c.HHSUITE):
     return sec_features
 
 
-
 def join(data, features):
     log.info('num of records in data: {}, num of records in features: {}'.format(data.shape[0], features.shape[0]))
     drop_columns = ['method', 'desc']
@@ -85,8 +81,6 @@ def join(data, features):
     log.info('num of records after join: {}'.format(res.shape[0]))
     
     return res
-
-
 
 def main():
     parser = argparse.ArgumentParser()
