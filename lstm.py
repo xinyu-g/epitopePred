@@ -57,7 +57,7 @@ def plot(label_lst, predict_lst, name):
     plt.ylabel('True Positive Rate')
     plt.title('Receiver operating characteristic example')
     plt.legend(loc="lower right")
-    plt.savefig(c.TRAIN_OUT + f'/{name}')
+    plt.savefig(args.out + f'/{name}')
 
 
 class RNN(nn.Module):
@@ -373,14 +373,15 @@ def standardize_data_w0feature(data, vocab_lst, maxlength = 300):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data', default=c.DATA_SEC)
-    parser.add_argument('--feature', default=True, type=lambda x: (str(x).lower() == 'true'))
+    parser.add_argument('--feature', default=False, type=lambda x: (str(x).lower() == 'true'))
     parser.add_argument('--reward', default=True, type=lambda x: (str(x).lower() == 'true'))
-    parser.add_argument('--input_size', default=39, type=lambda x: int(x))
-    parser.add_argument('--f', default='sparse')
+    parser.add_argument('--input_size', default=24, type=lambda x: int(x)) #39 with feature 
+    parser.add_argument('--f', default='sparse') 
     parser.add_argument('--name', default='IEDB_Jespersen')
-    parser.add_argument('--log', default='train') # format: reward_maxlen
+    parser.add_argument('--log', default='train') # overwrite 
     parser.add_argument('--maxlen', type=int, default=2000)
     parser.add_argument('--seed', default=1)
+    parser.add_argument('--out', default=c.TRAIN_OUT)
     args = parser.parse_args()
 
 
@@ -390,7 +391,7 @@ def main():
     format=logfmt, 
     datefmt='%Y-%m-%d %H:%M',
     handlers=[
-        logging.FileHandler(filename=f'{c.TRAIN_OUT}/{args.log}.log', mode='w+'),
+        logging.FileHandler(filename=f'{args.out}/{args.log}.log', mode='w+'),
         logging.StreamHandler()
     ])
     log.info('seed: '.format(args.seed))
