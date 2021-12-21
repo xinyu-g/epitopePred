@@ -245,7 +245,7 @@ def customized_loss(y_pred, y, mask, reward_f):
     rewards = (rewards - rewards.mean()) / (rewards.std() + float(np.finfo(np.float32).eps))
     # rewards = rewards + 0.01
     rewards = rewards.detach()
-    log.info('rewards: {}'.format(rewards))
+    # log.info('rewards: {}'.format(rewards))
     y_pred_ = torch.unsqueeze(torch.reshape(y_pred_, (-1,)), 1)
     loss = torch.sum(torch.mul(torch.log(y_pred_), rewards).mul(-1), -1)
     
