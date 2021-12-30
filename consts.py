@@ -4,6 +4,9 @@ OUT_DIR = "/home/xinyugu4/out/epip_out"
 DATA_SEC = "/home/xinyugu4/data/Datasets/epip/sec"
 DATA_RAW = "/home/xinyugu4/data/Datasets/epip/raw"
 TRAIN_OUT = "/home/xinyugu4/out/epip_out/train"
+ALPHA_DATA = "/srv/local/data/alphafold_data"
+ALPHA_OUT = "/home/xinyugu4/out/alpha_out/"
+ALPHA_SCRIPT = "/home/xinyugu4/ParallelFold/run_alphafold.sh"
 
 AA_LIST = ['A', 'R', 'N', 'D', 'C', 'Q', 'E', 'G', 'H', 'I', 'L', 'K', 'M', 'F', 'P', 'S', 'T', 'W', 'Y', 'V', 'X', 'B', 'Z', 'J']
 
